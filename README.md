@@ -1,6 +1,21 @@
-# Vue 3 + TypeScript + Vite
+# Vyper
+Write server-side Python directly inside Vue components.
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+## Example:
+```vue
+<template>
+  <h1>Vyper</h1>
+  <p>{{ greeting }}, Adam!</p>
+</template>
 
-Learn more about the recommended Project Setup and IDE Support in the [Vue Docs TypeScript Guide](https://vuejs.org/guide/typescript/overview.html#project-setup).
-# vyper
+<python>
+greeting = "Hola"
+
+def greet(name):
+  return f"Hello {name}!"
+</python>
+```
+
+---
+
+This project is just a quick proof of concept. 

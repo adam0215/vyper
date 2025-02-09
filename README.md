@@ -10,7 +10,7 @@ const pythonResult = ref(0)
 
 onMounted(async () => {
   // Call the 'add' function defined in the Python block and ran on the server
-	pythonResult.value = await add(18, 45)
+  pythonResult.value = await add(18, 45)
 })
 </script>
 
@@ -29,7 +29,7 @@ def greet(name):
   return f"Hello {name}!"
 
 def add(a, b):
-	return int(a) + int(b)
+  return int(a) + int(b)
 </python>
 ```
 

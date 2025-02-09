@@ -1,8 +1,7 @@
 import { parse } from '@vue/compiler-sfc'
-import crypto from 'crypto'
-
 import vyperParsePython from './vyper-parse-python'
 import { createWriteStream } from 'node:fs'
+import { getProcedureId, hashFilename } from './vyper-utils'
 
 export default function vyperTransform(
 	src: string,
@@ -20,8 +19,6 @@ export default function vyperTransform(
 		(b) => b.type === 'python'
 	)
 
-	const pythonTagRegex = /<python>(.*?)<\/python>/gs
-
 	const parsedPythonBlocks = [...pythonBlocks].flatMap((b) => {
 		return vyperParsePython(b.content)
 	})
@@ -31,9 +28,20 @@ export default function vyperTransform(
 	const allGlobalVariables = parsedPythonBlocks
 		.flatMap((b) => b.variableAssignmentExpressions)
 		.flat()
-		.filter((i) => i !== null)
+		.filter((v) => v) as {
+		ident: string
+		src: string
+	}[]
 
-	const fileNameHash = crypto.createHash('md5').update(id).digest('hex')
+	const allGlobalFunctions = parsedPythonBlocks
+		.flatMap((b) => b.functionBlocks)
+		.flat()
+		.filter((f) => f.ident) as {
+		ident: string
+		src: string
+	}[]
+
+	const fileNameHash = hashFilename(id)
 	// Create Python dictionary on file endpoint that return all global variables on request
 	try {
 		console.log('[Vyper] Appending a "File Endpoint" to server')
@@ -54,36 +62,67 @@ export default function vyperTransform(
 		console.error(e)
 	}
 
-	parsedPythonBlocks.forEach((b) => {
-		// Filename + Function identifier
-		b.functionBlocks.forEach((f) => {
-			let procEndpointHash = crypto
-				.createHash('md5')
-				.update(id + f.ident)
-				.digest('hex')
+	// Filename + Function identifier
+	allGlobalFunctions.forEach((f) => {
+		if (!f.ident) return
 
-			try {
-				console.log('[Vyper] Appending a "Procedure Endpoint" to server')
-				fileStream.write(
-					'\n\n' + `@app.get("/pe_${procEndpointHash}")\n` + f.src.trim()
-				)
-			} catch (e) {
-				console.error(e)
-			}
-		})
+		let procEndpointHash = getProcedureId(id, f.ident)
+
+		try {
+			console.log('[Vyper] Appending a "Procedure Endpoint" to server')
+			fileStream.write(
+				'\n\n' + `@app.get("/pe_${procEndpointHash}")\n` + f.src.trim()
+			)
+		} catch (e) {
+			console.error(e)
+		}
 	})
 
 	fileStream.end()
 
-	const srcWithRemovedPython = src.replace(pythonTagRegex, '')
-	const srcWithAppendedGlobals =
-		allGlobalVariables.length < 1
-			? srcWithRemovedPython
-			: srcWithRemovedPython.trimEnd() +
-			  `\n\n<script lang="ts">\nimport { ref } from 'vue'\n${generateGlobalVariableScriptTagContent(
-					allGlobalVariables,
-					fileNameHash
-			  )}\n</script>`
+	const srcWithRemovedPython = removePythonBlocks(src)
+
+	let srcWithAppendedGlobals = srcWithRemovedPython
+
+	// Append globals
+	if (descriptor.scriptSetup) {
+		const setupBlock = descriptor.scriptSetup
+		const setupBlockLoc = setupBlock.loc
+
+		const srcWithRemovedSetupBlockContent = removeCodeChunk(
+			srcWithRemovedPython,
+			setupBlockLoc.start.offset,
+			setupBlockLoc.end.offset
+		)
+
+		srcWithAppendedGlobals =
+			allGlobalVariables.length < 1 && allGlobalFunctions.length < 1
+				? srcWithRemovedPython
+				: insertCodeAtIndex(
+						srcWithRemovedSetupBlockContent.trimEnd(),
+						setupBlockLoc.start.offset,
+						setupBlock.content +
+							`\n${generateGlobalVariableScriptTagContent(
+								allGlobalVariables,
+								fileNameHash
+							)}\n${generateGlobalFunctionScriptTagContent(
+								allGlobalFunctions,
+								id
+							)}\n`
+				  )
+	} else {
+		srcWithAppendedGlobals =
+			allGlobalVariables.length < 1 && allGlobalFunctions.length < 1
+				? srcWithRemovedPython
+				: srcWithRemovedPython.trimEnd() +
+				  `\nimport { ref } from 'vue'\n${generateGlobalVariableScriptTagContent(
+						allGlobalVariables,
+						fileNameHash
+				  )}\n${generateGlobalFunctionScriptTagContent(
+						allGlobalFunctions,
+						id
+				  )}\n`
+	}
 
 	/* console.log(srcWithAppendedGlobals) */
 
@@ -94,6 +133,20 @@ export default function vyperTransform(
 		),
 		pythonFunctions: parsedPythonBlocks.flatMap((b) => b.functionBlocks),
 	}
+}
+
+function removeCodeChunk(src: string, start: number, end: number) {
+	return src.slice(0, start) + src.slice(end)
+}
+
+function insertCodeAtIndex(src: string, index: number, insertion: string) {
+	return src.slice(0, index) + insertion + src.slice(index)
+}
+
+function removePythonBlocks(src: string) {
+	// TODO: Remove unecessary whitespace that the removal of the Python tags leave in the compiled Vue files
+	const pythonTagRegex = /<python>(.*?)<\/python>/gs
+	return src.replace(pythonTagRegex, '')
 }
 
 function createVariableEndpointDict(idents: string[]) {
@@ -114,14 +167,40 @@ function generateGlobalVariableScriptTagContent(
 	let content = ''
 
 	// Create refs
-	content += `\n${variables
+	content += `${variables
 		.map((v) => `const ${v.ident} = ref(null)`)
 		.join('\n')}`
 
 	// Add update logic to then statement
-	content += `\nconst fe_${endpointHash} = await fetch("${serverUrl}/fe_${endpointHash}").then(data => data.json()).then((data) => {\n${variables
-		.map((v) => `${v.ident}.value = data.${v.ident}`)
-		.join('\n')}})\n`
+	content += `\n\nonMounted(async () => {\n\tconst fe_${endpointHash} = await fetch("${serverUrl}/fe_${endpointHash}").then(data => data.json()).then((data) => {\n${variables
+		.map((v) => `\t${v.ident}.value = data.${v.ident}`)
+		.join('\n')}})\n})\n`
+
+	return content
+}
+
+function generateGlobalFunctionScriptTagContent(
+	functions: {
+		ident: string
+		src: string
+	}[],
+	filename: string
+) {
+	const serverUrl = 'http://localhost:8000'
+	let content = ''
+
+	// Create refs
+	content += `${functions
+		.map(
+			(f) =>
+				`async function ${
+					f.ident
+				}() {\n\treturn await fetch("${serverUrl}/pe_${getProcedureId(
+					filename,
+					f.ident
+				)}").then(data => data.json())\n}`
+		)
+		.join('\n')}`
 
 	return content
 }

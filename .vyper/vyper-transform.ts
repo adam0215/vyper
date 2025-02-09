@@ -38,6 +38,7 @@ export default function vyperTransform(
 		.flat()
 		.filter((f) => f.ident) as {
 		ident: string
+		params: string[]
 		src: string
 	}[]
 
@@ -182,6 +183,7 @@ function generateGlobalVariableScriptTagContent(
 function generateGlobalFunctionScriptTagContent(
 	functions: {
 		ident: string
+		params: string[]
 		src: string
 	}[],
 	filename: string
@@ -193,14 +195,27 @@ function generateGlobalFunctionScriptTagContent(
 	content += `${functions
 		.map(
 			(f) =>
-				`async function ${
-					f.ident
-				}() {\n\treturn await fetch("${serverUrl}/pe_${getProcedureId(
+				`async function ${f.ident}(${f.params.join(
+					', '
+				)}) {\n\treturn await fetch(\`${serverUrl}/pe_${getProcedureId(
 					filename,
 					f.ident
-				)}").then(data => data.json())\n}`
+				)}${generateProcedureQueryParams(
+					f.params
+				)}\`).then(data => data.json())\n}`
 		)
 		.join('\n')}`
 
 	return content
+}
+
+function generateProcedureQueryParams(params: string[]) {
+	if (params.length < 1) return ''
+
+	let queryParams = ''
+
+	for (const [i, p] of params.entries())
+		queryParams += i === 0 ? `?${p}=\${${p}}` : `&${p}=\${${p}}`
+
+	return queryParams
 }

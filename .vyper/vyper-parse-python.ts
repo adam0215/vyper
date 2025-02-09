@@ -17,13 +17,33 @@ export default function vyperParsePython(src: string) {
 		.map((n) => parseAssignment(n))
 		.filter((v) => v)
 	const functionBlocks = funcDefinitions
-		.map((n) => ({ ident: n.childForFieldName('name')?.text, src: n.text }))
+		.map((n) => ({
+			ident: n.childForFieldName('name')?.text,
+			params: parseFunctionParameters(n),
+			src: n.text,
+		}))
 		.filter((f) => f.ident)
 
 	return {
 		variableAssignmentExpressions: variableAssignmentExpressions,
 		functionBlocks: functionBlocks,
 	}
+}
+
+function parseFunctionParameters(node: Parser.SyntaxNode) {
+	const parameterIdents: string[] = []
+
+	if (node.type !== 'function_definition') return []
+
+	node.children.forEach((c) => {
+		if (c.type === 'parameters') {
+			c.children.forEach((c) => {
+				if (c.type === 'identifier') parameterIdents.push(c.text)
+			})
+		}
+	})
+
+	return parameterIdents
 }
 
 function parseAssignment(node: Parser.SyntaxNode) {

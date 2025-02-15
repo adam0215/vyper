@@ -1,46 +1,74 @@
 <script setup lang="ts">
-import TestComponent from './components/TestComponent.vue'
+import MathComponent from './components/MathComponent.vue'
 import { ref, onMounted } from 'vue'
 
-const count = ref(0)
-
-count.value = 128
-
-const pythonResult = ref(0)
+const greeting = ref('Hej')
 
 onMounted(async () => {
-	pythonResult.value = await add(18, 45)
-	console.log(pythonResult)
+	greeting.value = await get_random_greeting()
 })
 </script>
 
 <python>
-placeholder = "Irure ullamco commodo deserunt cillum labore in cillum magna nisi ut Lorem."
-greeting = "Hola"
-
-num = 12
-
-def add(a, b):
-	return int(a) + int(b) + num
-
-def greet(name):
-	print(f"Hello {name}!")
-	return name
-</python>
-
-<python>
-def thank(name):
-	print(f"Thank you {name}!")
-	return name
+def get_random_greeting():
+	import random
+	return random.choice([
+		"Hello,",
+		"Hola,",
+		"Bonjour,",
+		"Hallo,",
+		"Ciao,",
+		"Ola,",
+		"Merhaba,",
+		"Hej,",
+		"Salve,",
+		"Geia sou,",
+		"Shalom,",
+		"Namaste,",
+		"Selam,",
+		"Halo,",
+	])
 </python>
 
 <template>
-	<div>
-		<h1>Vyper</h1>
-		<p>{{ greeting }}, Adam!</p>
-		<p>Siffra: {{ count }}</p>
-		<p>Function return from Python: {{ pythonResult }}</p>
-		<button @click="thank('Adam')">Greet</button>
-	</div>
-	<TestComponent />
+	<main>
+		<div class="heading-container">
+			<h1>Vyper</h1>
+			<h2 class="greeting">{{ greeting }} from Python</h2>
+		</div>
+		<MathComponent />
+	</main>
 </template>
+
+<style scoped>
+main {
+	display: flex;
+	flex-direction: column;
+
+	gap: 3rem;
+}
+
+.heading-container {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 1rem;
+
+	width: 100%;
+	padding-block: 2rem;
+}
+
+.heading-container h1 {
+	font-size: 5rem;
+	font-weight: bold;
+	background: linear-gradient(180deg, #0dfd7d, #021d16);
+	-webkit-background-clip: text;
+	-webkit-text-fill-color: transparent;
+}
+
+.heading-container .greeting {
+	font-size: 2rem;
+	font-weight: 500;
+	color: var(--grey-200);
+}
+</style>

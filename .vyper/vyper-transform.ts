@@ -43,36 +43,69 @@ export default function vyperTransform(
 	}[]
 
 	const fileNameHash = hashFilename(id)
-	// Create Python dictionary on file endpoint that return all global variables on request
-	try {
-		console.log('[Vyper] Appending a "File Endpoint" to server')
 
-		// Skip creating endpoints for blocks without variables
-		if (allGlobalVariables.length > 0) {
+	try {
+		console.log(
+			'[Vyper] Appending a "File Endpoint" to server',
+			`(${fileNameHash})`
+		)
+		if (allGlobalVariables.length > 0 || allGlobalFunctions.length > 0) {
 			fileStream.write(
-				'\n\n' +
-					`@app.get("/fe_${fileNameHash}")\n` +
-					`def fe_${fileNameHash}():\n${allGlobalVariables
-						.map((v) => '\t' + v.src)
-						.join('\n')}\n\treturn ${createVariableEndpointDict(
-						allGlobalVariables.map((v) => v.ident)
-					)}`
+				`\n@app.get("/fe_${fileNameHash}")\ndef fe_${fileNameHash}(action: str = Query(...), params: Optional[List[str]] = Query(None)):`
 			)
 		}
 	} catch (e) {
 		console.error(e)
 	}
 
-	// Filename + Function identifier
 	allGlobalFunctions.forEach((f) => {
 		if (!f.ident) return
 
-		let procEndpointHash = getProcedureId(id, f.ident)
+		// Filename + Function identifier
+		let procHash = getProcedureId(id, f.ident)
 
 		try {
-			console.log('[Vyper] Appending a "Procedure Endpoint" to server')
+			console.log('[Vyper] Defining a procedure on the server')
 			fileStream.write(
-				'\n\n' + `@app.get("/pe_${procEndpointHash}")\n` + f.src.trim()
+				`\n\tdef p_${procHash}(${f.params.join(', ').trimEnd()}):` +
+					'\n\t' +
+					f.src.trim().split('\n').slice(1).join('\n\t')
+			)
+		} catch (e) {
+			console.error(e)
+		}
+	})
+
+	// Create Python dictionary on file endpoint that return all global variables on request
+	try {
+		console.log('[Vyper] Appending a "Data Endpoint" to server')
+
+		// Skip creating endpoints for blocks without variables
+		if (allGlobalVariables.length > 0) {
+			fileStream.write(
+				`\n\n${allGlobalVariables
+					.map((v) => '\t' + v.src)
+					.join('\n')}\n\n\tmatch action:\n\t\tcase "data":\n\t\t\treturn ${
+					allGlobalVariables.length > 0
+						? createVariableEndpointDict(allGlobalVariables.map((v) => v.ident))
+						: '{}'
+				}`
+			)
+		}
+	} catch (e) {
+		console.error(e)
+	}
+
+	allGlobalFunctions.forEach((f) => {
+		if (!f.ident) return
+
+		console.log('[Vyper] Appending a "Procedure Endpoint" to server')
+
+		let procHash = getProcedureId(id, f.ident)
+
+		try {
+			fileStream.write(
+				`\n\t\tcase "p_${f.ident}":\n\t\t\treturn p_${procHash}(*params)`
 			)
 		} catch (e) {
 			console.error(e)
@@ -108,7 +141,7 @@ export default function vyperTransform(
 								fileNameHash
 							)}\n${generateGlobalFunctionScriptTagContent(
 								allGlobalFunctions,
-								id
+								fileNameHash
 							)}\n`
 				  )
 	} else {
@@ -121,7 +154,7 @@ export default function vyperTransform(
 						fileNameHash
 				  )}\n${generateGlobalFunctionScriptTagContent(
 						allGlobalFunctions,
-						id
+						fileNameHash
 				  )}\n`
 	}
 
@@ -173,7 +206,7 @@ function generateGlobalVariableScriptTagContent(
 		.join('\n')}`
 
 	// Add update logic to then statement
-	content += `\n\nonMounted(async () => {\n\tconst fe_${endpointHash} = await fetch("${serverUrl}/fe_${endpointHash}").then(data => data.json()).then((data) => {\n${variables
+	content += `\n\nonMounted(async () => {\n\tconst fe_${endpointHash} = await fetch('${serverUrl}/fe_${endpointHash}?action=data').then(data => data.json()).then((data) => {\n${variables
 		.map((v) => `\t${v.ident}.value = data.${v.ident}`)
 		.join('\n')}})\n})\n`
 
@@ -186,7 +219,7 @@ function generateGlobalFunctionScriptTagContent(
 		params: string[]
 		src: string
 	}[],
-	filename: string
+	endpointHash: string
 ) {
 	const serverUrl = 'http://localhost:8000'
 	let content = ''
@@ -197,10 +230,9 @@ function generateGlobalFunctionScriptTagContent(
 			(f) =>
 				`async function ${f.ident}(${f.params.join(
 					', '
-				)}) {\n\treturn await fetch(\`${serverUrl}/pe_${getProcedureId(
-					filename,
+				)}) {\n\treturn await fetch(\`${serverUrl}/fe_${endpointHash}?action=p_${
 					f.ident
-				)}${generateProcedureQueryParams(
+				}&${generateProcedureQueryParams(
 					f.params
 				)}\`).then(data => data.json())\n}`
 		)
@@ -215,7 +247,7 @@ function generateProcedureQueryParams(params: string[]) {
 	let queryParams = ''
 
 	for (const [i, p] of params.entries())
-		queryParams += i === 0 ? `?${p}=\${${p}}` : `&${p}=\${${p}}`
+		queryParams += i === 0 ? `params=\${${p}}` : `&params=\${${p}}`
 
 	return queryParams
 }

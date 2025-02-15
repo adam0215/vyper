@@ -18,8 +18,10 @@ onMounted(async () => {
 placeholder = "Irure ullamco commodo deserunt cillum labore in cillum magna nisi ut Lorem."
 greeting = "Hola"
 
+num = 12
+
 def add(a, b):
-	return int(a) + int(b)
+	return int(a) + int(b) + num
 
 def greet(name):
 	print(f"Hello {name}!")

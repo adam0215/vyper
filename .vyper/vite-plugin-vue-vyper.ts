@@ -73,7 +73,7 @@ function resetVyperServer(serverPath: string) {
 		// Clear Vyper Server Python File
 		writeFileSync(
 			serverPath,
-			`from fastapi import FastAPI\nfrom fastapi.middleware.cors import CORSMiddleware\n\napp = FastAPI()\n\n\napp.add_middleware(\n\tCORSMiddleware,\n\tallow_origins=["*"],\n\tallow_credentials=True,\n\tallow_methods=["*"],\n\tallow_headers=["*"]\n)\n\n@app.get("/")\ndef main():\n\treturn {"message": "Hello World"}`
+			`from fastapi import FastAPI, Query\nfrom fastapi.middleware.cors import CORSMiddleware\nfrom typing import List, Optional\n\napp = FastAPI()\n\n\napp.add_middleware(\n\tCORSMiddleware,\n\tallow_origins=["*"],\n\tallow_credentials=True,\n\tallow_methods=["*"],\n\tallow_headers=["*"]\n)\n\n@app.get("/")\ndef main():\n\treturn {"message": "Hello World"}\n\n`
 		)
 	} catch (e) {
 		console.error(e)

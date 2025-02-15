@@ -51,7 +51,7 @@ export default function vyperTransform(
 		)
 		if (allGlobalVariables.length > 0 || allGlobalFunctions.length > 0) {
 			fileStream.write(
-				`\n@app.get("/fe_${fileNameHash}")\ndef fe_${fileNameHash}(action: str = Query(...), params: Optional[List[str]] = Query(None)):`
+				`\n\n@app.get("/fe_${fileNameHash}")\ndef fe_${fileNameHash}(action: str = Query(...), params: Optional[List[str]] = Query(None)):`
 			)
 		}
 	} catch (e) {
@@ -81,11 +81,11 @@ export default function vyperTransform(
 		console.log('[Vyper] Appending a "Data Endpoint" to server')
 
 		// Skip creating endpoints for blocks without variables
-		if (allGlobalVariables.length > 0) {
+		if (allGlobalVariables.length > 0 || allGlobalFunctions.length > 0) {
 			fileStream.write(
 				`\n\n${allGlobalVariables
 					.map((v) => '\t' + v.src)
-					.join('\n')}\n\n\tmatch action:\n\t\tcase "data":\n\t\t\treturn ${
+					.join('\n')}\tmatch action:\n\t\tcase "data":\n\t\t\treturn ${
 					allGlobalVariables.length > 0
 						? createVariableEndpointDict(allGlobalVariables.map((v) => v.ident))
 						: '{}'
@@ -105,7 +105,9 @@ export default function vyperTransform(
 
 		try {
 			fileStream.write(
-				`\n\t\tcase "p_${f.ident}":\n\t\t\treturn p_${procHash}(*params)`
+				`\n\t\tcase "p_${f.ident}":\n\t\t\treturn p_${procHash}(${
+					f.params.length > 0 ? '*params' : ''
+				})`
 			)
 		} catch (e) {
 			console.error(e)
@@ -144,12 +146,14 @@ export default function vyperTransform(
 								fileNameHash
 							)}\n`
 				  )
+
+		srcWithAppendedGlobals = addOnMountedToVueSrc(srcWithAppendedGlobals)
 	} else {
 		srcWithAppendedGlobals =
 			allGlobalVariables.length < 1 && allGlobalFunctions.length < 1
 				? srcWithRemovedPython
 				: srcWithRemovedPython.trimEnd() +
-				  `\nimport { ref } from 'vue'\n${generateGlobalVariableScriptTagContent(
+				  `\nimport { ref, onMounted } from 'vue'\n${generateGlobalVariableScriptTagContent(
 						allGlobalVariables,
 						fileNameHash
 				  )}\n${generateGlobalFunctionScriptTagContent(
@@ -239,6 +243,32 @@ function generateGlobalFunctionScriptTagContent(
 		.join('\n')}`
 
 	return content
+}
+
+function addOnMountedToVueSrc(src: string) {
+	// Check if 'vue' is imported
+	const vueImportPattern = /import\s*{[^}]*}\s*from\s*['"]vue['"]/
+	const hasVueImport = vueImportPattern.test(src)
+
+	const newImport = 'import { onMounted } from "vue";\n'
+
+	let updatedSrc = ''
+
+	if (hasVueImport) {
+		updatedSrc = src.replace(vueImportPattern, (match: string) => {
+			if (match.includes('onMounted')) {
+				return match
+			}
+
+			return match.replace(/{\s*([^}]+?)\s*}/, (_, innerContent) => {
+				return `{ ${innerContent}, onMounted }`
+			})
+		})
+	} else {
+		updatedSrc = newImport + src
+	}
+
+	return updatedSrc
 }
 
 function generateProcedureQueryParams(params: string[]) {
